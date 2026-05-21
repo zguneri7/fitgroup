@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:fitgroup/config/app_config.dart';
 
 class AuthService {
-  static const String baseUrl = AppConfig.apiBaseUrl;
+  static String get baseUrl => AppConfig.apiBaseUrl;
   static const Duration _requestTimeout = Duration(seconds: 12);
 
   Future<bool> register(String fullName, String email, String password) async {
