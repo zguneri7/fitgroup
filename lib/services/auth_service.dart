@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:fitgroup/config/app_config.dart';
+import 'package:fitgroup/services/session_service.dart';
 
 class AuthService {
   static String get baseUrl => AppConfig.apiBaseUrl;
@@ -55,6 +56,18 @@ class AuthService {
       ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        final user = body['user'] as Map<String, dynamic>?;
+        final token = body['token']?.toString();
+
+        if (user == null || user['id'] == null || token == null || token.isEmpty) {
+          return false;
+        }
+
+        SessionService.userId = (user['id'] as num).toInt();
+        SessionService.email = (user['email'] ?? '').toString();
+        SessionService.fullName = (user['fullName'] ?? '').toString();
+        SessionService.token = token;
         return true;
       }
 

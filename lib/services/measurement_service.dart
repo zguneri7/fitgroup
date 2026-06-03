@@ -3,19 +3,37 @@ import 'dart:convert';
 
 import 'package:fitgroup/config/app_config.dart';
 import 'package:fitgroup/services/measurement_store.dart';
+import 'package:fitgroup/services/session_service.dart';
 import 'package:http/http.dart' as http;
 
 class MeasurementService {
   static String get baseUrl => AppConfig.apiBaseUrl;
   static const Duration _requestTimeout = Duration(seconds: 12);
 
+  Map<String, String>? _authHeaders() {
+    final token = SessionService.token;
+    if (token == null || token.isEmpty) {
+      return null;
+    }
+
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
   Future<bool> saveMeasurement(MeasurementEntry entry) async {
+    final headers = _authHeaders();
+    if (headers == null) {
+      return false;
+    }
+
     final url = Uri.parse('$baseUrl/measurements');
 
     try {
       final response = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'measurementDate': _formatDate(entry.date),
           'chest': entry.chest,
@@ -35,10 +53,15 @@ class MeasurementService {
   }
 
   Future<List<MeasurementEntry>> fetchLatestMeasurements({int limit = 2}) async {
+    final headers = _authHeaders();
+    if (headers == null) {
+      return [];
+    }
+
     final url = Uri.parse('$baseUrl/measurements/latest?limit=$limit');
 
     try {
-      final response = await http.get(url).timeout(_requestTimeout);
+      final response = await http.get(url, headers: headers).timeout(_requestTimeout);
 
       if (response.statusCode != 200) {
         return [];

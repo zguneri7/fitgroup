@@ -3,7 +3,9 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
 import measurementRoutes from './routes/measurements.js';
-import { healthCheckDb, ensureMeasurementTables, ensureUserProfileColumns } from './db.js';
+import groupRoutes from './routes/groups.js';
+import { healthCheckDb, ensureGroupTables, ensureMeasurementTables, ensureUserProfileColumns } from './db.js';
+import { requireAuth } from './auth_middleware.js';
 
 dotenv.config();
 
@@ -23,7 +25,8 @@ app.get('/health', async (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
-app.use('/api/measurements', measurementRoutes);
+app.use('/api/measurements', requireAuth, measurementRoutes);
+app.use('/api/groups', requireAuth, groupRoutes);
 
 app.use((error, _req, res, _next) => {
   console.error(error);
@@ -33,6 +36,7 @@ app.use((error, _req, res, _next) => {
 async function startServer() {
   await ensureUserProfileColumns();
   await ensureMeasurementTables();
+  await ensureGroupTables();
 
   app.listen(port, () => {
     console.log(`FitGroup backend listening on http://localhost:${port}`);

@@ -1,10 +1,10 @@
-import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:fitgroup/ui/screens/measurement/measurement_screen.dart';
-import 'package:fitgroup/services/measurement_store.dart';
+import 'package:flutter/material.dart';
+import 'package:fitgroup/services/group_service.dart';
 import 'package:fitgroup/services/measurement_service.dart';
-
-
+import 'package:fitgroup/services/measurement_store.dart';
+import 'package:fitgroup/services/session_service.dart';
+import 'package:fitgroup/ui/screens/measurement/measurement_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -15,19 +15,29 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final MeasurementService _measurementService = MeasurementService();
+  final GroupService _groupService = GroupService();
   static const int _dashboardMeasurementLimit = 10;
+
   late Future<List<MeasurementEntry>> _measurementsFuture;
+  List<GroupInfo> _myGroups = [];
+  List<GroupFlowEntry> _groupFlow = [];
+  int? _selectedGroupId;
+  int? _selectedFlowUserId;
+  final Set<int> _hiddenSeriesUserIds = <int>{};
+  bool _groupLoading = false;
 
   @override
   void initState() {
     super.initState();
     _measurementsFuture = _loadMeasurements();
+    _loadGroupsAndFlow();
   }
 
   Future<List<MeasurementEntry>> _loadMeasurements() async {
     final measurements = await _measurementService.fetchLatestMeasurements(
       limit: _dashboardMeasurementLimit,
     );
+
     if (measurements.isNotEmpty) {
       for (final entry in measurements) {
         MeasurementStore.instance.save(entry);
@@ -39,7 +49,180 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _handleLogout(BuildContext context) {
+    SessionService.clear();
     Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+  }
+
+  Future<void> _loadGroupsAndFlow() async {
+    if (!SessionService.isLoggedIn) {
+      return;
+    }
+
+    setState(() {
+      _groupLoading = true;
+    });
+
+    final groups = await _groupService.fetchMyGroups();
+    _myGroups = groups;
+
+    if (groups.isNotEmpty) {
+      final current = _selectedGroupId;
+      final hasCurrent = current != null && groups.any((group) => group.id == current);
+      final active = hasCurrent ? groups.firstWhere((group) => group.id == current) : groups.first;
+
+      _selectedGroupId = active.id;
+      SessionService.activeGroupId = active.id;
+      SessionService.activeGroupName = active.name;
+      SessionService.activeGroupCode = active.code;
+      _groupFlow = await _groupService.fetchGroupFlow(groupId: active.id, limit: 30);
+
+      final availableUserIds = _groupFlow.map((entry) => entry.userId).toSet();
+      if (_selectedFlowUserId != null && !availableUserIds.contains(_selectedFlowUserId)) {
+        _selectedFlowUserId = null;
+      }
+      _hiddenSeriesUserIds.removeWhere((userId) => !availableUserIds.contains(userId));
+    } else {
+      _selectedGroupId = null;
+      _selectedFlowUserId = null;
+      _hiddenSeriesUserIds.clear();
+      _groupFlow = [];
+      SessionService.activeGroupId = null;
+      SessionService.activeGroupName = null;
+      SessionService.activeGroupCode = null;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _groupLoading = false;
+    });
+  }
+
+  Future<void> _showCreateGroupDialog() async {
+    if (!SessionService.isLoggedIn) {
+      return;
+    }
+
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Grup Olustur'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(hintText: 'Grup adi'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Vazgec'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Olustur'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (name == null || name.isEmpty) {
+      return;
+    }
+
+    final created = await _groupService.createGroup(name: name);
+    if (created == null) {
+      _showSnack('Grup olusturulamadi.');
+      return;
+    }
+
+    _selectedGroupId = created.id;
+    SessionService.activeGroupId = created.id;
+    SessionService.activeGroupName = created.name;
+    SessionService.activeGroupCode = created.code;
+    await _loadGroupsAndFlow();
+    _showSnack('Grup olusturuldu. Kod: ${created.code}');
+  }
+
+  Future<void> _showJoinGroupDialog() async {
+    if (!SessionService.isLoggedIn) {
+      return;
+    }
+
+    final controller = TextEditingController();
+    final code = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Gruba Katil'),
+          content: TextField(
+            controller: controller,
+            textCapitalization: TextCapitalization.characters,
+            decoration: const InputDecoration(hintText: 'Grup kodu'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Vazgec'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Katil'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (code == null || code.isEmpty) {
+      return;
+    }
+
+    final joined = await _groupService.joinGroup(code: code);
+    if (joined == null) {
+      _showSnack('Grup bulunamadi.');
+      return;
+    }
+
+    _selectedGroupId = joined.id;
+    SessionService.activeGroupId = joined.id;
+    SessionService.activeGroupName = joined.name;
+    SessionService.activeGroupCode = joined.code;
+    await _loadGroupsAndFlow();
+    _showSnack('Gruba katildin: ${joined.name}');
+  }
+
+  Future<void> _onGroupChanged(int? groupId) async {
+    if (groupId == null) {
+      return;
+    }
+
+    setState(() {
+      _selectedGroupId = groupId;
+      _selectedFlowUserId = null;
+      _hiddenSeriesUserIds.clear();
+    });
+
+    await _loadGroupsAndFlow();
+  }
+
+  void _toggleSeriesVisibility(int userId) {
+    setState(() {
+      if (_hiddenSeriesUserIds.contains(userId)) {
+        _hiddenSeriesUserIds.remove(userId);
+      } else {
+        _hiddenSeriesUserIds.add(userId);
+      }
+    });
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   @override
@@ -54,9 +237,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           appBar: AppBar(
             elevation: 0,
             backgroundColor: Colors.transparent,
-            title: const Text(
-              "Hoş Geldin, Kullanıcı",
-              style: TextStyle(
+            title: Text(
+              'Hos Geldin, ${SessionService.fullName ?? 'Kullanici'}',
+              style: const TextStyle(
                 color: Colors.black87,
                 fontWeight: FontWeight.w600,
               ),
@@ -84,6 +267,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(height: 25),
                 _buildChartCard(latestEntries),
                 const SizedBox(height: 25),
+                _buildGroupCard(),
+                const SizedBox(height: 25),
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
@@ -101,7 +286,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        "Günlük Kalori",
+                        'Gunluk Kalori',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -115,7 +300,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         minHeight: 10,
                       ),
                       const SizedBox(height: 10),
-                      const Text("1450 / 2000 kcal"),
+                      const Text('1450 / 2000 kcal'),
                     ],
                   ),
                 ),
@@ -140,6 +325,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           setState(() {
                             _measurementsFuture = Future.value(measurements);
                           });
+
+                          _loadGroupsAndFlow();
                         });
                       }
                     });
@@ -152,7 +339,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                   child: const Text(
-                    "Gunluk Olcu Girisi",
+                    'Gunluk Olcu Girisi',
                     style: TextStyle(fontSize: 16, color: Colors.white),
                   ),
                 ),
@@ -161,6 +348,297 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildGroupCard() {
+    final activeGroupName = SessionService.activeGroupName;
+    final activeGroupCode = SessionService.activeGroupCode;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 6,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Grup Akisi',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          if (activeGroupName != null) ...[
+            Text('Aktif grup: $activeGroupName'),
+            Text('Kod: ${activeGroupCode ?? '-'}'),
+          ] else
+            const Text('Henuz bir gruba dahil degilsin.'),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _showCreateGroupDialog,
+                  child: const Text('Grup Olustur'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _showJoinGroupDialog,
+                  child: const Text('Gruba Katil'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_myGroups.isNotEmpty)
+            DropdownButtonFormField<int>(
+              initialValue: _selectedGroupId,
+              decoration: const InputDecoration(
+                labelText: 'Aktif Grup',
+                border: OutlineInputBorder(),
+              ),
+              items: _myGroups.map((group) {
+                return DropdownMenuItem<int>(
+                  value: group.id,
+                  child: Text('${group.name} (${group.code})'),
+                );
+              }).toList(),
+              onChanged: _onGroupChanged,
+            ),
+          if (_myGroups.isNotEmpty)
+            const SizedBox(height: 12),
+          if (_groupLoading)
+            const Center(child: CircularProgressIndicator())
+          else if (_groupFlow.isEmpty)
+            const Text('Akis verisi henuz yok.')
+          else ...[
+            DropdownButtonFormField<int?>(
+              initialValue: _selectedFlowUserId,
+              decoration: const InputDecoration(
+                labelText: 'Kullanici Filtresi',
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                const DropdownMenuItem<int?>(
+                  value: null,
+                  child: Text('Tum Uyeler'),
+                ),
+                ..._groupFlow
+                    .map((entry) => entry.userId)
+                    .toSet()
+                    .map((userId) {
+                      final sample = _groupFlow.firstWhere((entry) => entry.userId == userId);
+                      return DropdownMenuItem<int?>(
+                        value: userId,
+                        child: Text(sample.userName),
+                      );
+                    }),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _selectedFlowUserId = value;
+                });
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildGroupFlowChart(
+              _selectedFlowUserId == null
+                  ? _groupFlow
+                  : _groupFlow.where((entry) => entry.userId == _selectedFlowUserId).toList(),
+            ),
+            const SizedBox(height: 8),
+            ...(_selectedFlowUserId == null
+                    ? _groupFlow
+                    : _groupFlow.where((entry) => entry.userId == _selectedFlowUserId))
+                .take(8)
+                .map((entry) {
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('${entry.userName} - ${_formatDate(entry.date)}'),
+                subtitle: Text(
+                  "Kilo: ${_formatValue(entry.weight, 'kg')} | Bel: ${_formatValue(entry.waist, 'cm')}",
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupFlowChart(List<GroupFlowEntry> flow) {
+    final ordered = [...flow]..sort((left, right) => left.date.compareTo(right.date));
+    final byUser = <int, List<GroupFlowEntry>>{};
+    final users = <int, String>{};
+    final dateToX = <String, int>{};
+    final indexToDate = <int, DateTime>{};
+    var cursor = 0;
+
+    for (final entry in ordered) {
+      byUser.putIfAbsent(entry.userId, () => []).add(entry);
+      users[entry.userId] = entry.userName;
+
+      final key = _isoDate(entry.date);
+      if (!dateToX.containsKey(key)) {
+        dateToX[key] = cursor;
+        indexToDate[cursor] = entry.date;
+        cursor++;
+      }
+    }
+
+    final bars = <LineChartBarData>[];
+    final points = <FlSpot>[];
+    final palette = <Color>[
+      Colors.green,
+      Colors.blue,
+      Colors.orange,
+      Colors.pink,
+      Colors.teal,
+      Colors.indigo,
+    ];
+
+    final userIds = byUser.keys.toList();
+    var colorIndex = 0;
+    byUser.forEach((userId, entries) {
+      if (_hiddenSeriesUserIds.contains(userId)) {
+        colorIndex++;
+        return;
+      }
+
+      final spots = <FlSpot>[];
+      for (final entry in entries) {
+        if (entry.weight == null) {
+          continue;
+        }
+
+        final x = dateToX[_isoDate(entry.date)]?.toDouble();
+        if (x != null) {
+          final spot = FlSpot(x, entry.weight!);
+          spots.add(spot);
+          points.add(spot);
+        }
+      }
+
+      if (spots.length >= 2) {
+        final color = palette[colorIndex % palette.length];
+        colorIndex++;
+        bars.add(
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            color: color,
+            barWidth: 3,
+            dotData: FlDotData(show: true),
+          ),
+        );
+      }
+    });
+
+    if (bars.isEmpty || points.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Text('Grup grafigi icin en az 2 kilo verisi gerekli.'),
+      );
+    }
+
+    final minY = points.map((point) => point.y).reduce((a, b) => a < b ? a : b) - 2;
+    final maxY = points.map((point) => point.y).reduce((a, b) => a > b ? a : b) + 2;
+    final maxX = (dateToX.length - 1).toDouble();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Grup Kilo Grafigi',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 10,
+          runSpacing: 6,
+          children: userIds.map((userId) {
+            final idx = userIds.indexOf(userId);
+            final color = palette[idx % palette.length];
+            final isHidden = _hiddenSeriesUserIds.contains(userId);
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InkWell(
+                  onTap: () => _toggleSeriesVisibility(userId),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: isHidden ? color.withValues(alpha: 0.25) : color,
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          users[userId] ?? 'Uye',
+                          style: TextStyle(
+                            color: isHidden ? Colors.black38 : Colors.black87,
+                            decoration: isHidden ? TextDecoration.lineThrough : TextDecoration.none,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 180,
+          child: LineChart(
+            LineChartData(
+              minX: 0,
+              maxX: maxX,
+              minY: minY,
+              maxY: maxY,
+              lineBarsData: bars,
+              borderData: FlBorderData(show: false),
+              gridData: FlGridData(show: false),
+              titlesData: FlTitlesData(
+                leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    interval: 1,
+                    getTitlesWidget: (value, meta) {
+                      final date = indexToDate[value.toInt()];
+                      if (date == null) {
+                        return const SizedBox.shrink();
+                      }
+                      return Text(_shortDate(date));
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -182,12 +660,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Son Ölçümler',
+            'Son Olcumler',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 14),
           if (entries.isEmpty)
-            const Text('Henüz ölçü girilmedi.')
+            const Text('Henuz olcu girilmedi.')
           else
             ...entries.reversed.map((entry) {
               return Padding(
@@ -222,7 +700,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 8),
           Text('Kilo: ${_formatValue(entry.weight, 'kg')}'),
           Text('Bel: ${_formatValue(entry.waist, 'cm')}'),
-          Text('Göğüs: ${_formatValue(entry.chest, 'cm')}'),
+          Text('Gogus: ${_formatValue(entry.chest, 'cm')}'),
         ],
       ),
     );
@@ -259,7 +737,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Olcum Grafiği',
+            'Olcum Grafigi',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
@@ -342,5 +820,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final month = date.month.toString().padLeft(2, '0');
     final year = date.year.toString();
     return '$day.$month.$year';
+  }
+
+  String _isoDate(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final year = date.year.toString();
+    return '$year-$month-$day';
   }
 }

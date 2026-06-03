@@ -12,7 +12,8 @@ CREATE INDEX IF NOT EXISTS idx_app_users_email ON app_users (email);
 
 CREATE TABLE IF NOT EXISTS measurement_entries (
   id BIGSERIAL PRIMARY KEY,
-  measurement_date DATE NOT NULL UNIQUE,
+  user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+  measurement_date DATE NOT NULL,
   chest NUMERIC(6,2),
   waist NUMERIC(6,2),
   belly NUMERIC(6,2),
@@ -24,4 +25,27 @@ CREATE TABLE IF NOT EXISTS measurement_entries (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_measurement_entries_date ON measurement_entries (measurement_date DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_measurement_entries_user_date
+  ON measurement_entries (user_id, measurement_date);
+
+CREATE INDEX IF NOT EXISTS idx_measurement_entries_date
+  ON measurement_entries (measurement_date DESC);
+
+CREATE TABLE IF NOT EXISTS app_groups (
+  id BIGSERIAL PRIMARY KEY,
+  name VARCHAR(120) NOT NULL,
+  code VARCHAR(12) NOT NULL UNIQUE,
+  created_by BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS group_members (
+  id BIGSERIAL PRIMARY KEY,
+  group_id BIGINT NOT NULL REFERENCES app_groups(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (group_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members (user_id);
+CREATE INDEX IF NOT EXISTS idx_group_members_group ON group_members (group_id);

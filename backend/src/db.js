@@ -37,7 +37,8 @@ export async function ensureMeasurementTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS measurement_entries (
       id BIGSERIAL PRIMARY KEY,
-      measurement_date DATE NOT NULL UNIQUE,
+      user_id BIGINT REFERENCES app_users(id) ON DELETE CASCADE,
+      measurement_date DATE NOT NULL,
       chest NUMERIC(6,2),
       waist NUMERIC(6,2),
       belly NUMERIC(6,2),
@@ -51,7 +52,54 @@ export async function ensureMeasurementTables() {
   `);
 
   await pool.query(`
+    ALTER TABLE measurement_entries
+    ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES app_users(id) ON DELETE CASCADE
+  `);
+
+  await pool.query(`
+    ALTER TABLE measurement_entries
+    DROP CONSTRAINT IF EXISTS measurement_entries_measurement_date_key
+  `);
+
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_measurement_entries_user_date
+    ON measurement_entries (user_id, measurement_date)
+  `);
+
+  await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_measurement_entries_date
     ON measurement_entries (measurement_date DESC)
+  `);
+}
+
+export async function ensureGroupTables() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_groups (
+      id BIGSERIAL PRIMARY KEY,
+      name VARCHAR(120) NOT NULL,
+      code VARCHAR(12) NOT NULL UNIQUE,
+      created_by BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS group_members (
+      id BIGSERIAL PRIMARY KEY,
+      group_id BIGINT NOT NULL REFERENCES app_groups(id) ON DELETE CASCADE,
+      user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (group_id, user_id)
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_group_members_user
+    ON group_members (user_id)
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_group_members_group
+    ON group_members (group_id)
   `);
 }
