@@ -14,6 +14,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _birthDateController = TextEditingController();
+  final AuthService _authService = AuthService();
+  DateTime? _selectedBirthDate;
+  String? _selectedGender;
   bool _isLoading = false;
 
   @override
@@ -22,6 +26,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _birthDateController.dispose();
     super.dispose();
   }
 
@@ -65,10 +70,60 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return null;
   }
 
+  String? _validateBirthDate() {
+    if (_selectedBirthDate == null) {
+      return 'Dogum tarihi gerekli.';
+    }
+
+    if (_selectedBirthDate!.isAfter(DateTime.now())) {
+      return 'Dogum tarihi bugunden sonra olamaz.';
+    }
+
+    return null;
+  }
+
+  String? _validateGender() {
+    if (_selectedGender == null || _selectedGender!.isEmpty) {
+      return 'Cinsiyet secimi gerekli.';
+    }
+
+    return null;
+  }
+
+  Future<void> _pickBirthDate() async {
+    final now = DateTime.now();
+    final initialDate = _selectedBirthDate ?? DateTime(now.year - 18, now.month, now.day);
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(now.year - 100, 1, 1),
+      lastDate: DateTime(now.year, now.month, now.day),
+      helpText: 'Dogum tarihini sec',
+    );
+
+    if (pickedDate == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedBirthDate = pickedDate;
+      _birthDateController.text = _formatDate(pickedDate);
+    });
+  }
+
+  String _formatDate(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final year = date.year.toString();
+    return '$day.$month.$year';
+  }
+
   Future<void> _handleRegister() async {
     final fullName = _fullNameController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
+    final birthDateError = _validateBirthDate();
+    final genderError = _validateGender();
 
     if (!(_formKey.currentState?.validate() ?? false)) {
       _showNotification(
@@ -78,11 +133,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
+    if (birthDateError != null || genderError != null) {
+      _showNotification(
+        birthDateError ?? genderError!,
+        isError: true,
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
-    final success = await AuthService().register(fullName, email, password);
+    final success = await _authService.register(
+      fullName,
+      email,
+      password,
+      _selectedBirthDate!,
+      _selectedGender!,
+    );
 
     if (!mounted) {
       return;
@@ -94,7 +163,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (success) {
       _showNotification(
-        'Kayit basarili! Giris yapabilirsin.',
+        'Kayit basarili. Simdi giris yapabilirsin.',
         isSuccess: true,
       );
       await Future.delayed(const Duration(milliseconds: 900));
@@ -170,6 +239,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 controller: _fullNameController,
                 decoration: const InputDecoration(
                   labelText: 'Ad Soyad (opsiyonel)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _birthDateController,
+                readOnly: true,
+                onTap: _pickBirthDate,
+                decoration: const InputDecoration(
+                  labelText: 'Dogum Tarihi',
+                  border: OutlineInputBorder(),
+                  suffixIcon: Icon(Icons.calendar_today),
+                ),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _selectedGender,
+                items: const [
+                  DropdownMenuItem(value: 'erkek', child: Text('Erkek')),
+                  DropdownMenuItem(value: 'kadin', child: Text('Kadin')),
+                  DropdownMenuItem(value: 'diger', child: Text('Diger')),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _selectedGender = value;
+                  });
+                },
+                decoration: const InputDecoration(
+                  labelText: 'Cinsiyet',
                   border: OutlineInputBorder(),
                 ),
               ),

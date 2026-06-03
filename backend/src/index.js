@@ -2,7 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
-import { healthCheckDb } from './db.js';
+import measurementRoutes from './routes/measurements.js';
+import { healthCheckDb, ensureMeasurementTables, ensureUserProfileColumns } from './db.js';
 
 dotenv.config();
 
@@ -22,12 +23,23 @@ app.get('/health', async (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/measurements', measurementRoutes);
 
 app.use((error, _req, res, _next) => {
   console.error(error);
   return res.status(500).json({ message: 'internal server error' });
 });
 
-app.listen(port, () => {
-  console.log(`FitGroup backend listening on http://localhost:${port}`);
+async function startServer() {
+  await ensureUserProfileColumns();
+  await ensureMeasurementTables();
+
+  app.listen(port, () => {
+    console.log(`FitGroup backend listening on http://localhost:${port}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error(error);
+  process.exit(1);
 });

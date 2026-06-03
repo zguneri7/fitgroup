@@ -7,8 +7,20 @@ class AuthService {
   static String get baseUrl => AppConfig.apiBaseUrl;
   static const Duration _requestTimeout = Duration(seconds: 12);
 
-  Future<bool> register(String fullName, String email, String password) async {
+  Future<bool> register(
+    String fullName,
+    String email,
+    String password,
+    DateTime birthDate,
+    String gender,
+  ) async {
     final url = Uri.parse('$baseUrl/auth/register');
+
+    final formattedBirthDate = [
+      birthDate.year.toString().padLeft(4, '0'),
+      birthDate.month.toString().padLeft(2, '0'),
+      birthDate.day.toString().padLeft(2, '0'),
+    ].join('-');
 
     try {
       final response = await http.post(
@@ -18,6 +30,8 @@ class AuthService {
           'fullName': fullName,
           'email': email,
           'password': password,
+          'birthDate': formattedBirthDate,
+          'gender': gender,
         }),
       ).timeout(_requestTimeout);
 
