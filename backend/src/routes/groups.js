@@ -8,6 +8,12 @@ function createGroupCode() {
   return crypto.randomBytes(4).toString('hex').toUpperCase();
 }
 
+function buildInviteLink(groupCode) {
+  const baseUrl = (process.env.APP_INVITE_BASE_URL ?? 'https://fitgroup.app/join').trim();
+  const separator = baseUrl.includes('?') ? '&' : '?';
+  return `${baseUrl}${separator}code=${encodeURIComponent(groupCode)}`;
+}
+
 router.post('/create', async (req, res, next) => {
   try {
     const ownerUserId = req.auth?.userId;
@@ -153,6 +159,65 @@ router.get('/:groupId/flow', async (req, res, next) => {
     );
 
     return res.json({ flow: result.rows });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get('/:groupId', async (req, res, next) => {
+  try {
+    const userId = req.auth?.userId;
+    const groupId = Number(req.params.groupId);
+
+    if (!userId || !groupId) {
+      return res.status(400).json({ message: 'groupId is required' });
+    }
+
+    const membershipResult = await pool.query(
+      `SELECT 1
+       FROM group_members
+       WHERE group_id = $1 AND user_id = $2`,
+      [groupId, userId],
+    );
+
+    if (membershipResult.rowCount === 0) {
+      return res.status(403).json({ message: 'forbidden: not a member of this group' });
+    }
+
+    const groupResult = await pool.query(
+      `SELECT id, name, code, created_by, created_at
+       FROM app_groups
+       WHERE id = $1`,
+      [groupId],
+    );
+
+    if (groupResult.rowCount === 0) {
+      return res.status(404).json({ message: 'group not found' });
+    }
+
+    const membersResult = await pool.query(
+      `SELECT
+         u.id,
+         COALESCE(NULLIF(TRIM(u.full_name), ''), u.email) AS display_name,
+         u.full_name,
+         u.email,
+         gm.joined_at
+       FROM group_members gm
+       INNER JOIN app_users u ON u.id = gm.user_id
+       WHERE gm.group_id = $1
+       ORDER BY gm.joined_at ASC`,
+      [groupId],
+    );
+
+    const group = groupResult.rows[0];
+    const inviteLink = buildInviteLink(group.code);
+
+    return res.json({
+      group,
+      members: membersResult.rows,
+      inviteLink,
+      inviteMessage: `FitGroup grubuma katil! Kod: ${group.code} | Link: ${inviteLink}`,
+    });
   } catch (error) {
     return next(error);
   }

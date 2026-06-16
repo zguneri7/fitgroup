@@ -1,13 +1,16 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import path from 'path';
 import authRoutes from './routes/auth.js';
 import measurementRoutes from './routes/measurements.js';
 import groupRoutes from './routes/groups.js';
 import { healthCheckDb, ensureGroupTables, ensureMeasurementTables, ensureUserProfileColumns } from './db.js';
 import { requireAuth } from './auth_middleware.js';
 
-dotenv.config();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const app = express();
 const port = Number(process.env.API_PORT ?? 3000);

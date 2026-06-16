@@ -61,6 +61,10 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json({ message: 'invalid credentials' });
     }
 
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ message: 'server auth is not configured' });
+    }
+
     const token = jwt.sign(
       {
         sub: user.id,

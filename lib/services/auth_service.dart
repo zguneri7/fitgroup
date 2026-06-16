@@ -4,6 +4,25 @@ import 'package:http/http.dart' as http;
 import 'package:fitgroup/config/app_config.dart';
 import 'package:fitgroup/services/session_service.dart';
 
+enum LoginStatus {
+  success,
+  invalidCredentials,
+  serverError,
+  networkError,
+}
+
+class LoginResult {
+  const LoginResult({
+    required this.status,
+    this.message,
+  });
+
+  final LoginStatus status;
+  final String? message;
+
+  bool get isSuccess => status == LoginStatus.success;
+}
+
 class AuthService {
   static String get baseUrl => AppConfig.apiBaseUrl;
   static const Duration _requestTimeout = Duration(seconds: 12);
@@ -43,7 +62,7 @@ class AuthService {
     }
   }
 
-  Future<bool> login(String email, String password) async {
+  Future<LoginResult> login(String email, String password) async {
     final url = Uri.parse('$baseUrl/auth/login');
     final normalizedEmail = email.trim().toLowerCase();
 
@@ -63,25 +82,57 @@ class AuthService {
         final token = body['token']?.toString();
 
         if (user == null || user['id'] == null || token == null || token.isEmpty) {
-          return false;
+          return const LoginResult(
+            status: LoginStatus.serverError,
+            message: 'Sunucu gecersiz bir cevap dondurdu.',
+          );
         }
 
         final userId = int.tryParse(user['id'].toString());
 
         if (userId == null) {
-          return false;
+          return const LoginResult(
+            status: LoginStatus.serverError,
+            message: 'Kullanici bilgisi okunamadi.',
+          );
         }
 
         SessionService.userId = userId;
         SessionService.email = (user['email'] ?? '').toString();
         SessionService.fullName = (user['fullName'] ?? '').toString();
         SessionService.token = token;
-        return true;
+        return const LoginResult(status: LoginStatus.success);
       }
 
-      return false;
+      String? message;
+      try {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        message = body['message']?.toString();
+      } catch (_) {
+        message = null;
+      }
+
+      if (response.statusCode == 401) {
+        return LoginResult(
+          status: LoginStatus.invalidCredentials,
+          message: message,
+        );
+      }
+
+      return LoginResult(
+        status: LoginStatus.serverError,
+        message: message,
+      );
+    } on TimeoutException {
+      return const LoginResult(
+        status: LoginStatus.networkError,
+        message: 'Sunucuya erisilemedi (zaman asimi).',
+      );
     } catch (_) {
-      return false;
+      return const LoginResult(
+        status: LoginStatus.networkError,
+        message: 'Sunucuya baglanirken bir hata olustu.',
+      );
     }
   }
 

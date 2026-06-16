@@ -37,6 +37,48 @@ class GroupFlowEntry {
   final double? chest;
 }
 
+class GroupMember {
+  const GroupMember({
+    required this.id,
+    required this.displayName,
+    required this.fullName,
+    required this.email,
+    required this.joinedAt,
+  });
+
+  final int id;
+  final String displayName;
+  final String fullName;
+  final String email;
+  final DateTime joinedAt;
+}
+
+class GroupDetail {
+  const GroupDetail({
+    required this.group,
+    required this.members,
+    required this.inviteLink,
+    required this.inviteMessage,
+  });
+
+  final GroupInfo group;
+  final List<GroupMember> members;
+  final String inviteLink;
+  final String inviteMessage;
+}
+
+class GroupActionResult {
+  const GroupActionResult({
+    this.group,
+    this.message,
+  });
+
+  final GroupInfo? group;
+  final String? message;
+
+  bool get isSuccess => group != null;
+}
+
 class GroupService {
   static String get baseUrl => AppConfig.apiBaseUrl;
   static const Duration _requestTimeout = Duration(seconds: 12);
@@ -53,10 +95,12 @@ class GroupService {
     };
   }
 
-  Future<GroupInfo?> createGroup({required String name}) async {
+  Future<GroupActionResult> createGroup({required String name}) async {
     final headers = _authHeaders();
     if (headers == null) {
-      return null;
+      return const GroupActionResult(
+        message: 'Oturum bulunamadi. Lutfen tekrar giris yap.',
+      );
     }
 
     final url = Uri.parse('$baseUrl/groups/create');
@@ -71,20 +115,28 @@ class GroupService {
       ).timeout(_requestTimeout);
 
       if (response.statusCode != 201) {
-        return null;
+        return GroupActionResult(message: _extractMessage(response.body, fallback: 'Grup olusturulamadi.'));
       }
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
-      return _toGroupInfo(body['group'] as Map<String, dynamic>);
+      return GroupActionResult(group: _toGroupInfo(body['group'] as Map<String, dynamic>));
+    } on TimeoutException {
+      return const GroupActionResult(
+        message: 'Sunucuya erisilemedi (zaman asimi).',
+      );
     } catch (_) {
-      return null;
+      return const GroupActionResult(
+        message: 'Sunucuya baglanirken bir hata olustu.',
+      );
     }
   }
 
-  Future<GroupInfo?> joinGroup({required String code}) async {
+  Future<GroupActionResult> joinGroup({required String code}) async {
     final headers = _authHeaders();
     if (headers == null) {
-      return null;
+      return const GroupActionResult(
+        message: 'Oturum bulunamadi. Lutfen tekrar giris yap.',
+      );
     }
 
     final url = Uri.parse('$baseUrl/groups/join');
@@ -99,13 +151,19 @@ class GroupService {
       ).timeout(_requestTimeout);
 
       if (response.statusCode != 200) {
-        return null;
+        return GroupActionResult(message: _extractMessage(response.body, fallback: 'Grup bulunamadi.'));
       }
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
-      return _toGroupInfo(body['group'] as Map<String, dynamic>);
+      return GroupActionResult(group: _toGroupInfo(body['group'] as Map<String, dynamic>));
+    } on TimeoutException {
+      return const GroupActionResult(
+        message: 'Sunucuya erisilemedi (zaman asimi).',
+      );
     } catch (_) {
-      return null;
+      return const GroupActionResult(
+        message: 'Sunucuya baglanirken bir hata olustu.',
+      );
     }
   }
 
@@ -153,6 +211,37 @@ class GroupService {
     }
   }
 
+  Future<GroupDetail?> fetchGroupDetail({required int groupId}) async {
+    final headers = _authHeaders();
+    if (headers == null) {
+      return null;
+    }
+
+    final url = Uri.parse('$baseUrl/groups/$groupId');
+
+    try {
+      final response = await http.get(url, headers: headers).timeout(_requestTimeout);
+      if (response.statusCode != 200) {
+        return null;
+      }
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final members = (body['members'] as List<dynamic>? ?? [])
+          .cast<Map<String, dynamic>>()
+          .map(_toGroupMember)
+          .toList();
+
+      return GroupDetail(
+        group: _toGroupInfo(body['group'] as Map<String, dynamic>),
+        members: members,
+        inviteLink: (body['inviteLink'] ?? '').toString(),
+        inviteMessage: (body['inviteMessage'] ?? '').toString(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   GroupInfo _toGroupInfo(Map<String, dynamic> json) {
     return GroupInfo(
       id: (json['id'] as num).toInt(),
@@ -179,6 +268,16 @@ class GroupService {
     );
   }
 
+  GroupMember _toGroupMember(Map<String, dynamic> json) {
+    return GroupMember(
+      id: (json['id'] as num).toInt(),
+      displayName: (json['display_name'] ?? '').toString(),
+      fullName: (json['full_name'] ?? '').toString(),
+      email: (json['email'] ?? '').toString(),
+      joinedAt: DateTime.tryParse((json['joined_at'] ?? '').toString()) ?? DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+
   double? _toDouble(dynamic value) {
     if (value == null) {
       return null;
@@ -189,5 +288,19 @@ class GroupService {
     }
 
     return double.tryParse(value.toString());
+  }
+
+  String _extractMessage(String body, {required String fallback}) {
+    try {
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final message = json['message']?.toString().trim();
+      if (message != null && message.isNotEmpty) {
+        return message;
+      }
+    } catch (_) {
+      // Ignore invalid response bodies and fall back to a generic message.
+    }
+
+    return fallback;
   }
 }

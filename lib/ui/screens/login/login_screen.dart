@@ -67,7 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _isLoading = true;
     });
 
-    final success = await AuthService().login(email, password);
+    final result = await AuthService().login(email, password);
 
     if (!mounted) {
       return;
@@ -77,7 +77,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _isLoading = false;
     });
 
-    if (success) {
+    if (result.isSuccess) {
       _showNotification(
         'Giris basarili!',
         isSuccess: true,
@@ -87,10 +87,28 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pushNamedAndRemoveUntil(context, '/dashboard', (route) => false);
       }
     } else {
-      _showNotification(
-        'Giris basarisiz. Email veya sifre yanlis.',
-        isError: true,
-      );
+      switch (result.status) {
+        case LoginStatus.invalidCredentials:
+          _showNotification(
+            'Giris basarisiz. Email veya sifre yanlis.',
+            isError: true,
+          );
+          break;
+        case LoginStatus.serverError:
+          _showNotification(
+            result.message ?? 'Sunucu hatasi. Lutfen daha sonra tekrar dene.',
+            isError: true,
+          );
+          break;
+        case LoginStatus.networkError:
+          _showNotification(
+            result.message ?? 'Sunucuya baglanilamadi. Backend calisiyor mu kontrol et.',
+            isError: true,
+          );
+          break;
+        case LoginStatus.success:
+          break;
+      }
     }
   }
 

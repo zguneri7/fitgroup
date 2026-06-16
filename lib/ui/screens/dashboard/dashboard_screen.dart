@@ -4,6 +4,7 @@ import 'package:fitgroup/services/group_service.dart';
 import 'package:fitgroup/services/measurement_service.dart';
 import 'package:fitgroup/services/measurement_store.dart';
 import 'package:fitgroup/services/session_service.dart';
+import 'package:fitgroup/ui/screens/group/group_detail_screen.dart';
 import 'package:fitgroup/ui/screens/measurement/measurement_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -102,6 +103,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _showCreateGroupDialog() async {
     if (!SessionService.isLoggedIn) {
+      if (!mounted) {
+        return;
+      }
+
+      _showSnack('Grup oluşturmak için önce giriş yapmalısın.');
       return;
     }
 
@@ -133,9 +139,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
-    final created = await _groupService.createGroup(name: name);
+    final result = await _groupService.createGroup(name: name);
+    final created = result.group;
     if (created == null) {
-      _showSnack('Grup olusturulamadi.');
+      _showSnack(result.message ?? 'Grup olusturulamadi.');
       return;
     }
 
@@ -149,6 +156,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _showJoinGroupDialog() async {
     if (!SessionService.isLoggedIn) {
+      if (!mounted) {
+        return;
+      }
+
+      _showSnack('Gruba katılmak için önce giriş yapmalısın.');
       return;
     }
 
@@ -181,9 +193,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
-    final joined = await _groupService.joinGroup(code: code);
+    final result = await _groupService.joinGroup(code: code);
+    final joined = result.group;
     if (joined == null) {
-      _showSnack('Grup bulunamadi.');
+      _showSnack(result.message ?? 'Grup bulunamadi.');
       return;
     }
 
@@ -399,6 +412,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ],
           ),
+          if (_selectedGroupId != null)
+            const SizedBox(height: 10),
+          if (_selectedGroupId != null)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => GroupDetailScreen(groupId: _selectedGroupId!),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.groups),
+                label: const Text('Grup Detay Ekrani'),
+              ),
+            ),
           const SizedBox(height: 12),
           if (_myGroups.isNotEmpty)
             DropdownButtonFormField<int>(
