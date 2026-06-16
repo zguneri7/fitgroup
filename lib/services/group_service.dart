@@ -37,6 +37,34 @@ class GroupFlowEntry {
   final double? chest;
 }
 
+class GroupLatestMeasurement {
+  const GroupLatestMeasurement({
+    required this.userId,
+    required this.userName,
+    required this.userEmail,
+    required this.date,
+    required this.chest,
+    required this.waist,
+    required this.belly,
+    required this.lowerBelly,
+    required this.hip,
+    required this.leg,
+    required this.weight,
+  });
+
+  final int userId;
+  final String userName;
+  final String userEmail;
+  final DateTime date;
+  final double? chest;
+  final double? waist;
+  final double? belly;
+  final double? lowerBelly;
+  final double? hip;
+  final double? leg;
+  final double? weight;
+}
+
 class GroupMember {
   const GroupMember({
     required this.id,
@@ -211,6 +239,28 @@ class GroupService {
     }
   }
 
+  Future<List<GroupLatestMeasurement>> fetchGroupLatestMeasurements({required int groupId}) async {
+    final headers = _authHeaders();
+    if (headers == null) {
+      return [];
+    }
+
+    final url = Uri.parse('$baseUrl/groups/$groupId/latest-measurements');
+
+    try {
+      final response = await http.get(url, headers: headers).timeout(_requestTimeout);
+      if (response.statusCode != 200) {
+        return [];
+      }
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final measurements = (body['measurements'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+      return measurements.map(_toLatestMeasurement).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<GroupDetail?> fetchGroupDetail({required int groupId}) async {
     final headers = _authHeaders();
     if (headers == null) {
@@ -244,7 +294,7 @@ class GroupService {
 
   GroupInfo _toGroupInfo(Map<String, dynamic> json) {
     return GroupInfo(
-      id: (json['id'] as num).toInt(),
+      id: _toInt(json['id']),
       name: (json['name'] ?? '').toString(),
       code: (json['code'] ?? '').toString(),
     );
@@ -254,7 +304,7 @@ class GroupService {
     final dateParts = (json['measurement_date'] as String).split('-');
 
     return GroupFlowEntry(
-      userId: (json['user_id'] as num).toInt(),
+      userId: _toInt(json['user_id']),
       userName: (json['full_name'] ?? '').toString(),
       userEmail: (json['email'] ?? '').toString(),
       date: DateTime(
@@ -270,11 +320,33 @@ class GroupService {
 
   GroupMember _toGroupMember(Map<String, dynamic> json) {
     return GroupMember(
-      id: (json['id'] as num).toInt(),
+      id: _toInt(json['id']),
       displayName: (json['display_name'] ?? '').toString(),
       fullName: (json['full_name'] ?? '').toString(),
       email: (json['email'] ?? '').toString(),
       joinedAt: DateTime.tryParse((json['joined_at'] ?? '').toString()) ?? DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+
+  GroupLatestMeasurement _toLatestMeasurement(Map<String, dynamic> json) {
+    final dateParts = (json['measurement_date'] as String).split('-');
+
+    return GroupLatestMeasurement(
+      userId: _toInt(json['user_id']),
+      userName: (json['full_name'] ?? '').toString(),
+      userEmail: (json['email'] ?? '').toString(),
+      date: DateTime(
+        int.parse(dateParts[0]),
+        int.parse(dateParts[1]),
+        int.parse(dateParts[2]),
+      ),
+      chest: _toDouble(json['chest']),
+      waist: _toDouble(json['waist']),
+      belly: _toDouble(json['belly']),
+      lowerBelly: _toDouble(json['lower_belly']),
+      hip: _toDouble(json['hip']),
+      leg: _toDouble(json['leg']),
+      weight: _toDouble(json['weight']),
     );
   }
 
@@ -288,6 +360,18 @@ class GroupService {
     }
 
     return double.tryParse(value.toString());
+  }
+
+  int _toInt(dynamic value) {
+    if (value is int) {
+      return value;
+    }
+
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   String _extractMessage(String body, {required String fallback}) {

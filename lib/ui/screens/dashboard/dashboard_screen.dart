@@ -1,5 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fitgroup/services/group_service.dart';
 import 'package:fitgroup/services/measurement_service.dart';
 import 'package:fitgroup/services/measurement_store.dart';
@@ -238,6 +239,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Future<void> _copyGroupCode(String code) async {
+    await Clipboard.setData(ClipboardData(text: code));
+    if (!mounted) {
+      return;
+    }
+
+    _showSnack('Grup kodu panoya kopyalandi.');
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<MeasurementEntry>>(
@@ -391,7 +401,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 10),
           if (activeGroupName != null) ...[
             Text('Aktif grup: $activeGroupName'),
-            Text('Kod: ${activeGroupCode ?? '-'}'),
+            Row(
+              children: [
+                Text('Kod: ${activeGroupCode ?? '-'}'),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: activeGroupCode == null ? null : () => _copyGroupCode(activeGroupCode),
+                  tooltip: 'Kodu Kopyala',
+                  icon: const Icon(Icons.copy, size: 18),
+                ),
+              ],
+            ),
           ] else
             const Text('Henuz bir gruba dahil degilsin.'),
           const SizedBox(height: 12),

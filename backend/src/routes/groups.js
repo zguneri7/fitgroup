@@ -92,6 +92,53 @@ router.post('/join', async (req, res, next) => {
   }
 });
 
+router.get('/:groupId/latest-measurements', async (req, res, next) => {
+  try {
+    const userId = req.auth?.userId;
+    const groupId = Number(req.params.groupId);
+
+    if (!userId || !groupId) {
+      return res.status(400).json({ message: 'groupId is required' });
+    }
+
+    const membershipResult = await pool.query(
+      `SELECT 1
+       FROM group_members
+       WHERE group_id = $1 AND user_id = $2`,
+      [groupId, userId],
+    );
+
+    if (membershipResult.rowCount === 0) {
+      return res.status(403).json({ message: 'forbidden: not a member of this group' });
+    }
+
+    const result = await pool.query(
+      `SELECT DISTINCT ON (me.user_id)
+          me.user_id,
+          u.full_name,
+          u.email,
+          TO_CHAR(me.measurement_date, 'YYYY-MM-DD') AS measurement_date,
+          me.chest,
+          me.waist,
+          me.belly,
+          me.lower_belly,
+          me.hip,
+          me.leg,
+          me.weight
+       FROM measurement_entries me
+       INNER JOIN group_members gm ON gm.user_id = me.user_id
+       INNER JOIN app_users u ON u.id = me.user_id
+       WHERE gm.group_id = $1
+       ORDER BY me.user_id, me.measurement_date DESC`,
+      [groupId],
+    );
+
+    return res.json({ measurements: result.rows });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.get('/mine', async (req, res, next) => {
   try {
     const userId = req.auth?.userId;
