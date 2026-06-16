@@ -1,24 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:fitgroup/services/auth_service.dart';
 
-
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class ForgotPasswordScreen extends StatefulWidget {
+  const ForgotPasswordScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  final TextEditingController emailController = TextEditingController();
-  final TextEditingController passwordController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _newPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
+  final AuthService _authService = AuthService();
   bool _isLoading = false;
 
   @override
   void dispose() {
-    emailController.dispose();
-    passwordController.dispose();
+    _emailController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -40,10 +42,10 @@ class _LoginScreenState extends State<LoginScreen> {
     return null;
   }
 
-  String? _validatePassword(String? value) {
+  String? _validateNewPassword(String? value) {
     final password = value ?? '';
     if (password.isEmpty) {
-      return 'Sifre gerekli.';
+      return 'Yeni sifre gerekli.';
     }
     if (password.length < 6) {
       return 'Sifre en az 6 karakter olmali.';
@@ -51,15 +53,20 @@ class _LoginScreenState extends State<LoginScreen> {
     return null;
   }
 
-  Future<void> _handleLogin() async {
-    final email = emailController.text.trim();
-    final password = passwordController.text;
+  String? _validateConfirmPassword(String? value) {
+    final confirmPassword = value ?? '';
+    if (confirmPassword.isEmpty) {
+      return 'Sifre tekrari gerekli.';
+    }
+    if (confirmPassword != _newPasswordController.text) {
+      return 'Sifreler ayni degil.';
+    }
+    return null;
+  }
 
+  Future<void> _handleResetPassword() async {
     if (!(_formKey.currentState?.validate() ?? false)) {
-      _showNotification(
-        'Lutfen hatali alanlari duzelt.',
-        isError: true,
-      );
+      _showNotification('Lutfen hatali alanlari duzelt.', isError: true);
       return;
     }
 
@@ -67,7 +74,10 @@ class _LoginScreenState extends State<LoginScreen> {
       _isLoading = true;
     });
 
-    final success = await AuthService().login(email, password);
+    final success = await _authService.forgotPassword(
+      _emailController.text.trim(),
+      _newPasswordController.text,
+    );
 
     if (!mounted) {
       return;
@@ -78,19 +88,13 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     if (success) {
-      _showNotification(
-        'Giris basarili!',
-        isSuccess: true,
-      );
-      await Future.delayed(const Duration(milliseconds: 800));
+      _showNotification('Sifre basariyla guncellendi.', isSuccess: true);
+      await Future.delayed(const Duration(milliseconds: 900));
       if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(context, '/dashboard', (route) => false);
+        Navigator.pop(context, true);
       }
     } else {
-      _showNotification(
-        'Giris basarisiz. Email veya sifre yanlis.',
-        isError: true,
-      );
+      _showNotification('Sifre guncellenemedi. Email kontrol et.', isError: true);
     }
   }
 
@@ -142,27 +146,17 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(title: const Text('Sifremi Unuttum')),
       body: Padding(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.all(24),
         child: Form(
           key: _formKey,
           autovalidateMode: AutovalidateMode.onUserInteraction,
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                "FitGroup",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 40),
-
               TextFormField(
-                controller: emailController,
+                controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
                 validator: _validateEmail,
                 decoration: const InputDecoration(
@@ -170,67 +164,39 @@ class _LoginScreenState extends State<LoginScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
-
               const SizedBox(height: 16),
-
               TextFormField(
-                controller: passwordController,
+                controller: _newPasswordController,
                 obscureText: true,
-                validator: _validatePassword,
+                validator: _validateNewPassword,
                 decoration: const InputDecoration(
-                  labelText: 'Sifre',
+                  labelText: 'Yeni Sifre',
                   border: OutlineInputBorder(),
                 ),
               ),
-
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _confirmPasswordController,
+                obscureText: true,
+                validator: _validateConfirmPassword,
+                decoration: const InputDecoration(
+                  labelText: 'Yeni Sifre (Tekrar)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
               const SizedBox(height: 24),
-
               SizedBox(
                 height: 48,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : _handleLogin,
+                  onPressed: _isLoading ? null : _handleResetPassword,
                   child: _isLoading
                       ? const SizedBox(
                           height: 18,
                           width: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Giris Yap'),
+                      : const Text('Sifreyi Guncelle'),
                 ),
-              ),
-
-              TextButton(
-                onPressed: _isLoading
-                    ? null
-                    : () async {
-                        final result = await Navigator.pushNamed(context, '/forgot-password');
-                        if (!mounted) {
-                          return;
-                        }
-                        if (result == true) {
-                          _showNotification(
-                            'Sifre degisti. Yeni sifrenle giris yapabilirsin.',
-                            isSuccess: true,
-                          );
-                        }
-                      },
-                child: const Text('Sifremi Unuttum'),
-              ),
-
-              TextButton(
-                onPressed: () async {
-                  final result = await Navigator.pushNamed(context, '/register');
-                  if (!mounted) {
-                    return;
-                  }
-                  if (result == true) {
-                    _showNotification(
-                      'Kayit tamamlandi. Simdi giris yapabilirsin.',
-                      isSuccess: true,
-                    );
-                  }
-                },
-                child: const Text('Kayit Ol'),
               ),
             ],
           ),

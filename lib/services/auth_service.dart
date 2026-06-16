@@ -16,6 +16,7 @@ class AuthService {
     String gender,
   ) async {
     final url = Uri.parse('$baseUrl/auth/register');
+    final normalizedEmail = email.trim().toLowerCase();
 
     final formattedBirthDate = [
       birthDate.year.toString().padLeft(4, '0'),
@@ -29,7 +30,7 @@ class AuthService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'fullName': fullName,
-          'email': email,
+          'email': normalizedEmail,
           'password': password,
           'birthDate': formattedBirthDate,
           'gender': gender,
@@ -44,13 +45,14 @@ class AuthService {
 
   Future<bool> login(String email, String password) async {
     final url = Uri.parse('$baseUrl/auth/login');
+    final normalizedEmail = email.trim().toLowerCase();
 
     try {
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'email': email,
+          'email': normalizedEmail,
           'password': password,
         }),
       ).timeout(_requestTimeout);
@@ -64,7 +66,13 @@ class AuthService {
           return false;
         }
 
-        SessionService.userId = (user['id'] as num).toInt();
+        final userId = int.tryParse(user['id'].toString());
+
+        if (userId == null) {
+          return false;
+        }
+
+        SessionService.userId = userId;
         SessionService.email = (user['email'] ?? '').toString();
         SessionService.fullName = (user['fullName'] ?? '').toString();
         SessionService.token = token;
@@ -72,6 +80,26 @@ class AuthService {
       }
 
       return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> forgotPassword(String email, String newPassword) async {
+    final url = Uri.parse('$baseUrl/auth/forgot-password');
+    final normalizedEmail = email.trim().toLowerCase();
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': normalizedEmail,
+          'newPassword': newPassword,
+        }),
+      ).timeout(_requestTimeout);
+
+      return response.statusCode == 200;
     } catch (_) {
       return false;
     }
