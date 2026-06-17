@@ -139,6 +139,84 @@ router.get('/:groupId/latest-measurements', async (req, res, next) => {
   }
 });
 
+router.post('/:groupId/messages', async (req, res, next) => {
+  try {
+    const userId = req.auth?.userId;
+    const groupId = Number(req.params.groupId);
+    const { text } = req.body ?? {};
+
+    if (!userId || !groupId || !text) {
+      return res.status(400).json({ message: 'groupId and text are required' });
+    }
+
+    const membershipResult = await pool.query(
+      `SELECT 1
+       FROM group_members
+       WHERE group_id = $1 AND user_id = $2`,
+      [groupId, userId],
+    );
+
+    if (membershipResult.rowCount === 0) {
+      return res.status(403).json({ message: 'forbidden: not a member of this group' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO group_messages (group_id, user_id, text)
+       VALUES ($1, $2, $3)
+       RETURNING id, group_id, user_id, text, created_at`,
+      [groupId, userId, text],
+    );
+
+    return res.status(201).json({ message: result.rows[0] });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get('/:groupId/messages', async (req, res, next) => {
+  try {
+    const userId = req.auth?.userId;
+    const groupId = Number(req.params.groupId);
+    const limit = Math.min(Number(req.query.limit ?? 50) || 50, 200);
+
+    if (!userId || !groupId) {
+      return res.status(400).json({ message: 'groupId is required' });
+    }
+
+    const membershipResult = await pool.query(
+      `SELECT 1
+       FROM group_members
+       WHERE group_id = $1 AND user_id = $2`,
+      [groupId, userId],
+    );
+
+    if (membershipResult.rowCount === 0) {
+      return res.status(403).json({ message: 'forbidden: not a member of this group' });
+    }
+
+    const result = await pool.query(
+      `SELECT
+          gm.id,
+          gm.group_id,
+          gm.user_id,
+          u.full_name,
+          u.email,
+          gm.text,
+          TO_CHAR(gm.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+       FROM group_messages gm
+       INNER JOIN app_users u ON u.id = gm.user_id
+       WHERE gm.group_id = $1
+       ORDER BY gm.created_at ASC
+       LIMIT $2`,
+      [groupId, limit],
+    );
+
+    return res.json({ messages: result.rows });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.get('/mine', async (req, res, next) => {
   try {
     const userId = req.auth?.userId;

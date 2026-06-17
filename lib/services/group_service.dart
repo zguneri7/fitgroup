@@ -328,6 +328,52 @@ class GroupService {
     );
   }
 
+  Future<List<Map<String, dynamic>>> fetchGroupMessages({required int groupId, int limit = 50}) async {
+    final headers = _authHeaders();
+    if (headers == null) {
+      return [];
+    }
+
+    final url = Uri.parse('$baseUrl/groups/$groupId/messages?limit=$limit');
+
+    try {
+      final response = await http.get(url, headers: headers).timeout(_requestTimeout);
+      if (response.statusCode != 200) {
+        return [];
+      }
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final messages = (body['messages'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+      return messages;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> sendGroupMessage({required int groupId, required String text}) async {
+    final headers = _authHeaders();
+    if (headers == null) {
+      throw Exception('Not authenticated');
+    }
+
+    final url = Uri.parse('$baseUrl/groups/$groupId/messages');
+    final body = jsonEncode({'text': text});
+
+    try {
+      final response = await http.post(
+        url,
+        headers: headers,
+        body: body,
+      ).timeout(_requestTimeout);
+
+      if (response.statusCode != 201) {
+        throw Exception('Failed to send message: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error sending message: $e');
+    }
+  }
+
   GroupLatestMeasurement _toLatestMeasurement(Map<String, dynamic> json) {
     final dateParts = (json['measurement_date'] as String).split('-');
 
