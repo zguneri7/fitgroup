@@ -34,6 +34,21 @@ export async function ensureUserProfileColumns() {
     ALTER TABLE app_users
     ADD COLUMN IF NOT EXISTS gender VARCHAR(20)
   `);
+
+  await pool.query(`
+    ALTER TABLE app_users
+    ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+
+  await pool.query(`
+    ALTER TABLE app_users
+    ADD COLUMN IF NOT EXISTS verification_code VARCHAR(12)
+  `);
+
+  await pool.query(`
+    ALTER TABLE app_users
+    ADD COLUMN IF NOT EXISTS verification_code_expires_at TIMESTAMPTZ
+  `);
 }
 
 export async function ensureMeasurementTables() {

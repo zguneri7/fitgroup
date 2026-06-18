@@ -145,7 +145,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _isLoading = true;
     });
 
-    final success = await _authService.register(
+    final result = await _authService.register(
       fullName,
       email,
       password,
@@ -161,9 +161,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _isLoading = false;
     });
 
-    if (success) {
+    if (result.success) {
+      final verificationCode = result.verificationCode;
+      final message = result.message ?? 'Kayit basarili. Simdi giris yapabilirsin.';
       _showNotification(
-        'Kayit basarili. Simdi giris yapabilirsin.',
+        verificationCode == null
+            ? message
+            : '$message Kod (test): $verificationCode',
         isSuccess: true,
       );
       await Future.delayed(const Duration(milliseconds: 900));
@@ -172,7 +176,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
     } else {
       _showNotification(
-        'Kayit basarisiz. Bu email zaten kullaniliyor olabilir.',
+        result.message ?? 'Kayit basarisiz. Bu email zaten kullaniliyor olabilir.',
         isError: true,
       );
     }
@@ -227,7 +231,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Kayit Ol')),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
           key: _formKey,

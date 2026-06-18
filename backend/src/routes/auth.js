@@ -5,6 +5,14 @@ import { pool } from '../db.js';
 
 const router = express.Router();
 
+function generateVerificationCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function verificationExpiresAt(minutes = 15) {
+  return new Date(Date.now() + minutes * 60 * 1000);
+}
+
 router.post('/register', async (req, res, next) => {
   try {
     const { email, password, fullName, birthDate, gender } = req.body ?? {};
@@ -24,13 +32,139 @@ router.post('/register', async (req, res, next) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    const verificationCode = generateVerificationCode();
+    const verificationCodeExpiresAt = verificationExpiresAt();
 
     const inserted = await pool.query(
-      'INSERT INTO app_users (full_name, birth_date, gender, email, password_hash) VALUES ($1, $2, $3, $4, $5) RETURNING id, full_name, birth_date, gender, email, created_at',
-      [fullName ?? null, birthDate, gender, normalizedEmail, passwordHash],
+      `INSERT INTO app_users
+       (full_name, birth_date, gender, email, password_hash, email_verified, verification_code, verification_code_expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, full_name, birth_date, gender, email, created_at`,
+      [
+        fullName ?? null,
+        birthDate,
+        gender,
+        normalizedEmail,
+        passwordHash,
+        false,
+        verificationCode,
+        verificationCodeExpiresAt,
+      ],
     );
 
-    return res.status(201).json({ user: inserted.rows[0] });
+    console.log(`[email-verification] ${normalizedEmail} code=${verificationCode}`);
+
+    const responsePayload = {
+      user: inserted.rows[0],
+      requiresEmailVerification: true,
+      message: 'Kayit basarili. Giris icin email dogrulamasi gerekli.',
+    };
+
+    if (process.env.NODE_ENV !== 'production') {
+      responsePayload.verificationCode = verificationCode;
+    }
+
+    return res.status(201).json(responsePayload);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/verify-email', async (req, res, next) => {
+  try {
+    const { email, code } = req.body ?? {};
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const normalizedCode = typeof code === 'string' ? code.trim() : '';
+
+    if (!normalizedEmail || !normalizedCode) {
+      return res.status(400).json({ message: 'email and code are required' });
+    }
+
+    const result = await pool.query(
+      `SELECT id, verification_code, verification_code_expires_at, email_verified
+       FROM app_users
+       WHERE LOWER(email) = LOWER($1)`,
+      [normalizedEmail],
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'user not found' });
+    }
+
+    const user = result.rows[0];
+
+    if (user.email_verified) {
+      return res.json({ message: 'email already verified' });
+    }
+
+    if (!user.verification_code || user.verification_code !== normalizedCode) {
+      return res.status(400).json({ message: 'invalid verification code' });
+    }
+
+    if (!user.verification_code_expires_at || new Date(user.verification_code_expires_at) < new Date()) {
+      return res.status(400).json({ message: 'verification code expired' });
+    }
+
+    await pool.query(
+      `UPDATE app_users
+       SET email_verified = TRUE,
+           verification_code = NULL,
+           verification_code_expires_at = NULL
+       WHERE id = $1`,
+      [user.id],
+    );
+
+    return res.json({ message: 'email verified' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/resend-verification', async (req, res, next) => {
+  try {
+    const { email } = req.body ?? {};
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+
+    if (!normalizedEmail) {
+      return res.status(400).json({ message: 'email is required' });
+    }
+
+    const result = await pool.query(
+      `SELECT id, email_verified
+       FROM app_users
+       WHERE LOWER(email) = LOWER($1)`,
+      [normalizedEmail],
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'user not found' });
+    }
+
+    const user = result.rows[0];
+
+    if (user.email_verified) {
+      return res.json({ message: 'email already verified' });
+    }
+
+    const verificationCode = generateVerificationCode();
+    const expiresAt = verificationExpiresAt();
+
+    await pool.query(
+      `UPDATE app_users
+       SET verification_code = $1,
+           verification_code_expires_at = $2
+       WHERE id = $3`,
+      [verificationCode, expiresAt, user.id],
+    );
+
+    console.log(`[email-verification] ${normalizedEmail} code=${verificationCode}`);
+
+    const payload = { message: 'verification code renewed' };
+    if (process.env.NODE_ENV !== 'production') {
+      payload.verificationCode = verificationCode;
+    }
+
+    return res.json(payload);
   } catch (error) {
     return next(error);
   }
@@ -46,7 +180,7 @@ router.post('/login', async (req, res, next) => {
     }
 
     const result = await pool.query(
-      'SELECT id, full_name, birth_date, gender, email, password_hash FROM app_users WHERE LOWER(email) = LOWER($1)',
+      'SELECT id, full_name, birth_date, gender, email, password_hash, email_verified FROM app_users WHERE LOWER(email) = LOWER($1)',
       [normalizedEmail],
     );
 
@@ -59,6 +193,13 @@ router.post('/login', async (req, res, next) => {
 
     if (!isValidPassword) {
       return res.status(401).json({ message: 'invalid credentials' });
+    }
+
+    if (!user.email_verified) {
+      return res.status(403).json({
+        message: 'email dogrulamasi gerekli. Lutfen kodu dogrulayip tekrar deneyin.',
+        requiresEmailVerification: true,
+      });
     }
 
     if (!process.env.JWT_SECRET) {

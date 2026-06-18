@@ -7,8 +7,23 @@ import 'package:fitgroup/services/session_service.dart';
 enum LoginStatus {
   success,
   invalidCredentials,
+  emailNotVerified,
   serverError,
   networkError,
+}
+
+class RegisterResult {
+  const RegisterResult({
+    required this.success,
+    this.message,
+    this.verificationCode,
+    this.requiresEmailVerification = false,
+  });
+
+  final bool success;
+  final String? message;
+  final String? verificationCode;
+  final bool requiresEmailVerification;
 }
 
 class LoginResult {
@@ -27,7 +42,7 @@ class AuthService {
   static String get baseUrl => AppConfig.apiBaseUrl;
   static const Duration _requestTimeout = Duration(seconds: 12);
 
-  Future<bool> register(
+  Future<RegisterResult> register(
     String fullName,
     String email,
     String password,
@@ -56,9 +71,39 @@ class AuthService {
         }),
       ).timeout(_requestTimeout);
 
-      return response.statusCode == 201;
+      if (response.statusCode == 201) {
+        Map<String, dynamic> body = <String, dynamic>{};
+        try {
+          body = jsonDecode(response.body) as Map<String, dynamic>;
+        } catch (_) {
+          body = <String, dynamic>{};
+        }
+
+        return RegisterResult(
+          success: true,
+          message: body['message']?.toString(),
+          verificationCode: body['verificationCode']?.toString(),
+          requiresEmailVerification: body['requiresEmailVerification'] == true,
+        );
+      }
+
+      String? message;
+      try {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        message = body['message']?.toString();
+      } catch (_) {
+        message = null;
+      }
+
+      return RegisterResult(
+        success: false,
+        message: message,
+      );
     } catch (_) {
-      return false;
+      return const RegisterResult(
+        success: false,
+        message: 'Sunucuya baglanirken bir hata olustu.',
+      );
     }
   }
 
@@ -117,6 +162,24 @@ class AuthService {
           status: LoginStatus.invalidCredentials,
           message: message,
         );
+      }
+
+      if (response.statusCode == 403) {
+        final requiresEmailVerification = (() {
+          try {
+            final body = jsonDecode(response.body) as Map<String, dynamic>;
+            return body['requiresEmailVerification'] == true;
+          } catch (_) {
+            return false;
+          }
+        })();
+
+        if (requiresEmailVerification) {
+          return LoginResult(
+            status: LoginStatus.emailNotVerified,
+            message: message,
+          );
+        }
       }
 
       return LoginResult(

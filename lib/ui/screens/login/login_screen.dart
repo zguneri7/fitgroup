@@ -94,6 +94,12 @@ class _LoginScreenState extends State<LoginScreen> {
             isError: true,
           );
           break;
+        case LoginStatus.emailNotVerified:
+          _showNotification(
+            result.message ?? 'Email dogrulamasi gerekli. Lutfen kayit sirasinda gelen kodu dogrulayin.',
+            isError: true,
+          );
+          break;
         case LoginStatus.serverError:
           _showNotification(
             result.message ?? 'Sunucu hatasi. Lutfen daha sonra tekrar dene.',

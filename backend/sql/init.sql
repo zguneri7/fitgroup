@@ -5,6 +5,9 @@ CREATE TABLE IF NOT EXISTS app_users (
   gender VARCHAR(20),
   email VARCHAR(255) NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  verification_code VARCHAR(12),
+  verification_code_expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
