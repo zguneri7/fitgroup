@@ -2,6 +2,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pool } from '../db.js';
+import { sendVerificationEmail } from '../email_service.js';
 
 const router = express.Router();
 
@@ -52,12 +53,22 @@ router.post('/register', async (req, res, next) => {
       ],
     );
 
+    const emailSendResult = await sendVerificationEmail({
+      to: normalizedEmail,
+      code: verificationCode,
+      fullName,
+      expiresMinutes: 15,
+    });
+
     console.log(`[email-verification] ${normalizedEmail} code=${verificationCode}`);
 
     const responsePayload = {
       user: inserted.rows[0],
       requiresEmailVerification: true,
-      message: 'Kayit basarili. Giris icin email dogrulamasi gerekli.',
+      emailSent: emailSendResult.sent,
+      message: emailSendResult.sent
+        ? 'Kayit basarili. Dogrulama kodu email adresinize gonderildi.'
+        : 'Kayit basarili ancak dogrulama emaili gonderilemedi. Lutfen daha sonra tekrar isteyin.',
     };
 
     if (process.env.NODE_ENV !== 'production') {
@@ -157,9 +168,20 @@ router.post('/resend-verification', async (req, res, next) => {
       [verificationCode, expiresAt, user.id],
     );
 
+    const emailSendResult = await sendVerificationEmail({
+      to: normalizedEmail,
+      code: verificationCode,
+      expiresMinutes: 15,
+    });
+
     console.log(`[email-verification] ${normalizedEmail} code=${verificationCode}`);
 
-    const payload = { message: 'verification code renewed' };
+    const payload = {
+      message: emailSendResult.sent
+        ? 'verification code renewed and sent'
+        : 'verification code renewed but email send failed',
+      emailSent: emailSendResult.sent,
+    };
     if (process.env.NODE_ENV !== 'production') {
       payload.verificationCode = verificationCode;
     }
